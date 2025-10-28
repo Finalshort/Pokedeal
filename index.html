@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PokeDeal – Box Rechner</title>
+<link rel="manifest" href="data:application/manifest+json,{\"name\":\"PokeDeal\",\"short_name\":\"PokeDeal\",\"display\":\"standalone\",\"start_url\":\".\",\"background_color\":\"#0ea5e9\",\"theme_color\":\"#0ea5e9\"}">
+<style>
+  :root{--bg:#0b1220;--card:#121a2b;--mut:#93a1b2;--fg:#e6eef8;--acc:#0ea5e9;--bad:#d94848;--good:#2fbf71}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(180deg,#0b1220,#0f172a);color:var(--fg)}
+  header{position:sticky;top:0;backdrop-filter:saturate(150%) blur(8px);background:rgba(15,23,42,.75);border-bottom:1px solid #1f2a44;z-index:2}
+  .wrap{max-width:980px;margin:auto;padding:16px}
+  h1{font-size:22px;margin:6px 0 2px}
+  .mut{color:var(--mut)}
+  .card{background:var(--card);border:1px solid #1f2a44;border-radius:16px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .row{display:flex;gap:12px;align-items:center}
+  .row>label{flex:1}
+  .row>input,.row>select{flex:1.2;min-width:0;padding:10px 12px;border-radius:12px;background:#0b1324;border:1px solid #253050;color:var(--fg)}
+  button{appearance:none;border:0;border-radius:12px;padding:10px 14px;background:var(--acc);color:white;font-weight:600}
+  button.ghost{background:transparent;border:1px solid #2b3a61;color:var(--fg)}
+  button.bad{background:var(--bad)}
+  button.good{background:var(--good)}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .tile{background:#0b1324;border:1px solid #253050;border-radius:14px;padding:10px;text-align:center}
+  .tile .ico{font-size:24px;line-height:1.1}
+  .tile input{width:64px;text-align:center;margin-top:6px;padding:8px;border-radius:10px;border:1px solid #2b3a61;background:#0a1222;color:var(--fg)}
+  .sp{height:10px}
+  .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .tag{font-size:12px;padding:6px 10px;background:#0a162c;border:1px solid #22325a;border-radius:999px}
+  .secTitle{font-weight:700;margin:10px 0 6px}
+  details{background:#0a1325;border:1px solid #1f2a44;border-radius:12px;padding:10px}
+  details>summary{cursor:pointer;font-weight:700;margin:4px 0}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (min-width: 800px){.grid{grid-template-columns:repeat(6,1fr)}}
+</style>
+<script>
+// --- tiny state manager with localStorage ---
+const SKEY = 'pokedeal_state_v3';
+const state = JSON.parse(localStorage.getItem(SKEY) || 'null') || {
+  coinsPerCurrency: 132, // 14500 / 109.99 ≈ 131.83 → gerundet
+  currencySymbol: '€',
+  useBestUnitPrice: true, // nutzt automatisch das beste Bündel
+  items: seedItems(),
+  box:{name:'Neue Box', coinPrice:0, items:{}}, // items: {itemId: qty}
+};
+function save(){ localStorage.setItem(SKEY, JSON.stringify(state)); }
+function cid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
+
+// --- Seed aus deinen Screens (permanente "Sale"-Preise als Festpreise) ---
+function seedItems(){
+  const arr = [
+    i('Premium‑Kampf‑Pass','🎫', {unitCoins:100, bundleCoins:[{qty:3, price:250}]}),
+    i('Fern‑Raid‑Pass','🌐🎫', {unitCoins:195, bundleCoins:[{qty:3, price:525}]}),
+    i('Ei‑Brutmaschine','🥚', {unitCoins:150}),
+    i('Super‑Brutmaschine','💠🥚', {unitCoins:200}),
+    i('Rauch','💨', {unitCoins:40, bundleCoins:[{qty:8, price:250}]}),
+    i('Lockmodul','📡', {unitCoins:100, bundleCoins:[{qty:8, price:680}]}),
+    i('Moos‑Lockmodul','🌿📡', {unitCoins:180}),
+    i('Magnet‑Lockmodul','🧲📡', {unitCoins:180}),
+    i('Regen‑Lockmodul','🌧️📡', {unitCoins:180}),
+    i('Gletscher‑Lockmodul','❄️📡', {unitCoins:180}),
+    i('Glücks‑Ei','✨🥚', {unitCoins:80, bundleCoins:[{qty:8, price:500}]}),
+    i('Sternenstück','⭐️', {unitCoins:100, bundleCoins:[{qty:8, price:640}]}),
+    i('Top‑Trank','🧪', {bundleCoins:[{qty:10, price:200}]}), // 20/Stk
+    i('Top‑Beleber','💊', {bundleCoins:[{qty:6, price:180}]}), // 30/Stk
+    i('Pokéball','🔴', {bundleCoins:[{qty:20, price:100},{qty:100, price:460},{qty:200, price:800}]}),
+    i('Rocket‑Radar','🛰️', {unitCoins:200}),
+    i('Knursp','🥟', {unitCoins:100}),
+    i('Team‑Medallion','🛡️', {unitCoins:1000}),
+    // Upgrades – in Coins pro Einheit (angenommen +50 Plätze)
+    i('Item‑Beutel‑Platz','👜', {derivedPerUnit:{bundleQty:50,bundleCoins:200}}), // 4/Platz
+    i('Pokémon‑Aufbewahrung‑Platz','📦', {derivedPerUnit:{bundleQty:50,bundleCoins:200}}), // 4/Platz
+    i('Postkartenseiten','📮', {unitCoins:100})
+  ];
+  return arr;
+}
+function i(name, icon, pricing){
+  return { id: cid(), name, icon, pricing };
+}
+
+// --- Preisberechnung: nutzt je nach Einstellung den besten Stückpreis ---
+function unitCoins(item){
+  const p = item.pricing||{};
+  let candidates = [];
+  if(p.unitCoins!=null) candidates.push(p.unitCoins);
+  if(p.bundleCoins){ for(const b of p.bundleCoins){ if(b.qty>0) candidates.push(b.price/b.qty); }}
+  if(p.bundleMoney){ for(const b of p.bundleMoney){ if(b.qty>0) candidates.push((b.price*state.coinsPerCurrency)/b.qty); }}
+  if(p.derivedPerUnit){ // für Upgrades pro Platz
+    const d = p.derivedPerUnit; if(d.bundleQty>0) candidates.push(d.bundleCoins/d.bundleQty);
+  }
+  if(candidates.length===0) return 0;
+  return state.useBestUnitPrice ? Math.min(...candidates) : (p.unitCoins ?? Math.min(...candidates));
+}
+
+// helpers
+const el=(sel)=>document.querySelector(sel);
+const fmt = (n)=> (Math.round(n*100)/100).toFixed(2);
+
+function render(){
+  // header controls
+  el('#coinsPerCurr').value = state.coinsPerCurrency;
+  el('#currencySymbol').value = state.currencySymbol;
+  el('#useBest').checked = state.useBestUnitPrice;
+
+  // items grid
+  const grid = el('#itemsGrid');
+  grid.innerHTML = '';
+  state.items.forEach(it=>{
+    const q = state.box.items[it.id]||0;
+    const unit = Math.round(unitCoins(it));
+    const div = document.createElement('div');
+    div.className='tile';
+    div.innerHTML = `<div class="ico">${it.icon||'📦'}</div>
+      <div style="font-size:12px;margin-top:4px">${it.name}</div>
+      <div class="mut" style="font-size:11px">${unit} Coins/Stk</div>
+      <input inputmode="numeric" pattern="[0-9]*" value="${q}" data-id="${it.id}" class="qty">`;
+    grid.appendChild(div);
+  });
+  grid.querySelectorAll('input.qty').forEach(inp=>{
+    inp.addEventListener('input', e=>{
+      const id = e.target.dataset.id;
+      const val = Math.max(0, parseInt(e.target.value||'0',10));
+      state.box.items[id]=val; save(); calc();
+    });
+  });
+
+  // item editor list
+  const tbl = el('#itemTable');
+  tbl.innerHTML='';
+  state.items.forEach(it=>tbl.appendChild(renderEditorRow(it)));
+
+  calc();
+}
+
+function renderEditorRow(it){
+  const tr = document.createElement('div'); tr.className='row'; tr.style.margin='6px 0';
+  const u = unitCoins(it);
+  tr.innerHTML = `<input value="${it.icon}" style="max-width:70px" title="Icon">
+      <input value="${it.name}" title="Name">
+      <div class="mut" style="min-width:120px">≈ ${fmt(u)} Coins/Stk</div>
+      <button class="ghost" data-a="cfg">Preis‑Modus</button>
+      <button class="bad" data-a="del">✕</button>`;
+  const [ico,name,,btnCfg,btnDel] = tr.children;
+  ico.addEventListener('input',()=>{it.icon=ico.value; save(); render();});
+  name.addEventListener('input',()=>{it.name=name.value; save(); render();});
+  btnDel.addEventListener('click',()=>{ if(confirm('Item löschen?')){ state.items=state.items.filter(x=>x.id!==it.id); delete state.box.items[it.id]; save(); render(); }});
+  btnCfg.addEventListener('click',()=> openConfig(it));
+  return tr;
+}
+
+function calc(){
+  el('#boxName').value = state.box.name;
+  el('#boxCoins').value = state.box.coinPrice;
+
+  let totalCoins = 0;
+  state.items.forEach(it=>{ const q = state.box.items[it.id]||0; totalCoins += q * unitCoins(it); });
+  totalCoins = Math.round(totalCoins);
+  const priceCoins = Number(state.box.coinPrice||0);
+  const savings = Math.round(totalCoins - priceCoins);
+  const score = priceCoins>0? totalCoins/priceCoins : 0;
+  const money = priceCoins / (state.coinsPerCurrency||1);
+  el('#valCoins').textContent = totalCoins + ' Coins';
+  el('#priceCoins').textContent = priceCoins + ' Coins';
+  el('#saveCoins').textContent = `${savings} Coins (${ priceCoins>0 && totalCoins>0 ? fmt((savings/totalCoins)*100) : '0.0'}%)`;
+  el('#money').textContent = fmt(money) + state.currencySymbol;
+  el('#score').textContent = '×'+fmt(score) + (score<1? ' (schlecht)': score<1.2? ' (ok)': ' (gut)');
+  const tags = el('#tags'); tags.innerHTML='';
+  [['Wert',totalCoins+'💰'],['Preis',priceCoins+'💰'],['Ersparnis',savings+'💰']].forEach(t=>{const s=document.createElement('div'); s.className='tag'; s.textContent = `${t[0]}: ${t[1]}`; tags.appendChild(s);});
+}
+
+// --- config modal (simple prompt-based for single-file) ---
+function openConfig(it){
+  const mode = prompt('Preis-Modus wählen:
+1 = Einzelpreis in Coins
+2 = Bundle in Coins
+3 = Bundle in Geld (Euro)
+Aktueller effektiver Preis: '+fmt(unitCoins(it))+' Coins/Stk','1');
+  if(!mode) return;
+  if(mode==='1'){
+    const v = Number(prompt('Einzelpreis in Coins/Stk? (z.B. 195)',''+(it.pricing.unitCoins??''))||'0');
+    it.pricing.unitCoins = v; save(); render();
+  } else if(mode==='2'){
+    const qty = Number(prompt('Menge im Bundle? (z.B. 3)','')||'0');
+    const price = Number(prompt('Bundle‑Preis in Coins? (z.B. 525)','')||'0');
+    if(!it.pricing.bundleCoins) it.pricing.bundleCoins=[];
+    it.pricing.bundleCoins.push({qty,price}); save(); render();
+  } else if(mode==='3'){
+    const qty = Number(prompt('Menge im Bundle?','')||'0');
+    const price = Number(prompt('Bundle‑Preis in '+state.currencySymbol+'?','')||'0');
+    if(!it.pricing.bundleMoney) it.pricing.bundleMoney=[];
+    it.pricing.bundleMoney.push({qty,price}); save(); render();
+  }
+}
+
+// inputs handlers
+window.addEventListener('DOMContentLoaded',()=>{
+  el('#coinsPerCurr').addEventListener('input',e=>{ state.coinsPerCurrency = Number(e.target.value||0); save(); render(); });
+  el('#currencySymbol').addEventListener('input',e=>{ state.currencySymbol = e.target.value||'€'; save(); render(); });
+  el('#useBest').addEventListener('change',e=>{ state.useBestUnitPrice = e.target.checked; save(); render(); });
+  el('#boxName').addEventListener('input',e=>{ state.box.name = e.target.value; save(); });
+  el('#boxCoins').addEventListener('input',e=>{ state.box.coinPrice = parseInt(e.target.value||'0',10); save(); calc(); });
+  el('#addItem').addEventListener('click',()=>{ state.items.push(i('Neues Item','📦',{})); save(); render(); });
+  el('#resetQty').addEventListener('click',()=>{ if(confirm('Alle Mengen auf 0?')){ state.box.items={}; save(); render(); }});
+  el('#export').addEventListener('click',()=>{ const blob = new Blob([JSON.stringify(state,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='pokedeal.json'; a.click(); });
+  el('#import').addEventListener('change',ev=>{ const f=ev.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ const s=JSON.parse(r.result); Object.assign(state,s); save(); render(); }catch(e){ alert('Ungültige Datei'); } }; r.readAsText(f); });
+  el('#bundleToRate').addEventListener('click',()=>{
+    const coins = Number(prompt('Münzen im Bundle? z. B. 14500','14500')||'0');
+    const price = Number(prompt('Preis des Bundles in Geld? z. B. 109.99','109.99')||'0');
+    if(price>0){ state.coinsPerCurrency = coins/price; save(); render(); }
+  });
+  // service worker inline
+  if('serviceWorker' in navigator){
+    const sw = `self.addEventListener('install',e=>{self.skipWaiting(); e.waitUntil(caches.open('pd-v1').then(c=>c.addAll(['./'])))}); self.addEventListener('fetch',e=>{ e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))) });`;
+    const blob = new Blob([sw],{type:'text/javascript'});
+    const url = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(url);
+  }
+  render();
+});
+</script>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>PokeDeal <span class="mut">– Box Rechner</span></h1>
+    <div class="mut">Fixpreise aus Shop (inkl. Bündel), Box‑Inhalt im Raster, Deal‑Bewertung, €‑Umrechnung</div>
+  </div>
+</header>
+<main class="wrap">
+  <section class="card">
+    <div class="two">
+      <div>
+        <div class="secTitle">Münzen ↔ Währung</div>
+        <div class="row"><label>Coins pro Währungseinheit</label><input id="coinsPerCurr" type="number" step="0.01" value="132"></div>
+        <div class="row"><label>Symbol</label><input id="currencySymbol" value="€"></div>
+        <div class="row"><label>Bestes Angebot (Bundles berücksichtigen)</label><input id="useBest" type="checkbox" checked></div>
+        <div class="sp"></div>
+        <button class="ghost" id="bundleToRate">Aus Münz‑Bundle berechnen</button>
+      </div>
+      <div>
+        <div class="secTitle">Box</div>
+        <div class="row"><label>Name</label><input id="boxName" placeholder="Beispiel‑Box"></div>
+        <div class="row"><label>Preis (Coins)</label><input id="boxCoins" type="number" inputmode="numeric" min="0" step="1" value="0"></div>
+        <div class="tags" id="tags"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="sp"></div>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between;align-items:baseline">
+      <div class="secTitle">Inhalt (Schnelleingabe)</div>
+      <button class="ghost" id="resetQty">Mengen leeren</button>
+    </div>
+    <div class="grid" id="itemsGrid"></div>
+  </section>
+
+  <div class="sp"></div>
+
+  <section class="card">
+    <div class="secTitle">Ergebnis</div>
+    <div class="two">
+      <div>
+        <div class="row"><label>Wert der Items</label><div id="valCoins">0</div></div>
+        <div class="row"><label>Box‑Preis</label><div id="priceCoins">0</div></div>
+        <div class="row"><label>Ersparnis</label><div id="saveCoins">0</div></div>
+      </div>
+      <div>
+        <div class="row"><label>Preis in Geld</label><div id="money">0€</div></div>
+        <div class="row"><label>Deal‑Score</label><div id="score">×0.00</div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="sp"></div>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between;align-items:baseline">
+      <div class="secTitle">Item‑Katalog</div>
+      <div class="row" style="gap:8px">
+        <button class="ghost" id="addItem">Item hinzufügen</button>
+        <input id="import" type="file" accept="application/json" style="display:none">
+        <button class="ghost" onclick="document.querySelector('#import').click()">Import</button>
+        <button class="ghost" id="export">Export</button>
+      </div>
+    </div>
+    <div id="itemTable"></div>
+    <details style="margin-top:10px"><summary>Wie werden Stückpreise berechnet?</summary>
+      <div class="mut" style="margin-top:8px">
+        • Einzelpreis in Coins, wenn vorhanden. <br>
+        • Bündel in Coins → <em>Preis / Menge</em>. <br>
+        • Bündel in € → <em>(€ × Coins/€) / Menge</em>. <br>
+        • Wenn „Bestes Angebot“ aktiv ist, nutzt die App automatisch den günstigsten Stückpreis. <br>
+      </div>
+    </details>
+  </section>
+
+  <p class="mut" style="margin:12px 4px">Alle Daten bleiben lokal (localStorage). Du kannst sie per Export sichern.</p>
+</main>
+</body>
+</html>
